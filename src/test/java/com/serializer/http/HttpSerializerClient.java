@@ -5,9 +5,10 @@ import java.nio.charset.StandardCharsets;
 
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.ParseException;
@@ -52,7 +53,7 @@ public class HttpSerializerClient {
         HttpGet request = new HttpGet(url);
         request.setHeader("Accept", "application/json");
         
-        try (ClassicHttpResponse response = (ClassicHttpResponse) httpClient.execute(request)) {
+        try (CloseableHttpResponse response = httpClient.execute(request)) {
             HttpEntity entity = response.getEntity();
             if (entity != null) {
                 String json = EntityUtils.toString(entity, StandardCharsets.UTF_8);
@@ -84,7 +85,7 @@ public class HttpSerializerClient {
         String json = serializer.serialize(requestObject);
         request.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
         
-        try (ClassicHttpResponse response = (ClassicHttpResponse) httpClient.execute(request)) {
+        try (CloseableHttpResponse response = httpClient.execute(request)) {
             HttpEntity entity = response.getEntity();
             if (entity != null) {
                 String responseJson = EntityUtils.toString(entity, StandardCharsets.UTF_8);
