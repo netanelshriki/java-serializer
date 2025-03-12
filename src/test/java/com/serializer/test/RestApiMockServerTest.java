@@ -51,6 +51,7 @@ public class RestApiMockServerTest {
     
     // Serializers and deserializers
     private Serializer<Task> taskSerializer;
+    private Serializer<Task[]> taskArraySerializer; // Added serializer for Task[] array
     private Deserializer<Task> taskDeserializer;
     private Serializer<CreateTaskRequest> createTaskSerializer;
     private Serializer<UpdateTaskRequest> updateTaskSerializer;
@@ -69,6 +70,7 @@ public class RestApiMockServerTest {
                 .build();
         
         taskSerializer = factory.getSerializer(Task.class);
+        taskArraySerializer = factory.getSerializer(Task[].class); // Initialize Task[] serializer
         taskDeserializer = factory.getDeserializer(Task.class);
         createTaskSerializer = factory.getSerializer(CreateTaskRequest.class);
         updateTaskSerializer = factory.getSerializer(UpdateTaskRequest.class);
@@ -126,7 +128,8 @@ public class RestApiMockServerTest {
             )
             .respond(request -> {
                 Task[] tasks = taskDatabase.toArray(new Task[0]);
-                String tasksJson = taskSerializer.serialize(tasks);
+                // Fixed: Using taskArraySerializer instead of taskSerializer
+                String tasksJson = taskArraySerializer.serialize(tasks);
                 return response()
                     .withStatusCode(200)
                     .withHeaders(new Header("Content-Type", "application/json; charset=utf-8"))
@@ -404,7 +407,9 @@ public class RestApiMockServerTest {
     // Inner classes for supporting test
     static class HttpPost extends HttpRequest {
         public HttpPost(String uri) {
-            super().withMethod("POST").withPath(uri);
+            // Fixed: Call super first and then chain method calls separately
+            super();
+            this.withMethod("POST").withPath(uri);
         }
         
         public void setHeader(String name, String value) {
