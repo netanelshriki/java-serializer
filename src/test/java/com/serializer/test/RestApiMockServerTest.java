@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.hc.core5.http.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -169,7 +170,8 @@ public class RestApiMockServerTest {
             )
             .respond(request -> {
                 String requestBody = request.getBodyAsString();
-                CreateTaskRequest createRequest = taskDeserializer.deserialize(requestBody);
+                // Fix: Use the correct deserializer for CreateTaskRequest
+                CreateTaskRequest createRequest = factory.getDeserializer(CreateTaskRequest.class).deserialize(requestBody);
                 
                 Task newTask = new Task();
                 newTask.setId(nextTaskId++);
@@ -204,7 +206,8 @@ public class RestApiMockServerTest {
                 Task existingTask = findTaskById(id);
                 if (existingTask != null) {
                     String requestBody = request.getBodyAsString();
-                    UpdateTaskRequest updateRequest = taskDeserializer.deserialize(requestBody);
+                    // Fix: Use the correct deserializer for UpdateTaskRequest
+                    UpdateTaskRequest updateRequest = factory.getDeserializer(UpdateTaskRequest.class).deserialize(requestBody);
                     
                     existingTask.setTitle(updateRequest.getTitle());
                     existingTask.setDescription(updateRequest.getDescription());
@@ -250,6 +253,12 @@ public class RestApiMockServerTest {
             });
     }
     
+    // Adding the missing JsonSerializerFactory reference for the deserialization in the mock
+    private JsonSerializerFactory factory = JsonSerializerFactory.builder()
+            .serializeNulls(false)
+            .dateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+            .build();
+    
     /**
      * Helper method to find a task by ID in the database.
      *
@@ -266,7 +275,7 @@ public class RestApiMockServerTest {
     }
     
     @Test
-    public void testGetAllTasks() throws IOException {
+    public void testGetAllTasks() throws IOException, ParseException {
         // Send GET request to fetch all tasks
         Task[] tasks = httpClient.get("http://localhost:" + PORT + "/api/tasks", taskArrayDeserializer);
         
@@ -288,7 +297,7 @@ public class RestApiMockServerTest {
     }
     
     @Test
-    public void testGetTaskById() throws IOException {
+    public void testGetTaskById() throws IOException, ParseException {
         // Get an existing task by ID
         Task task = httpClient.get("http://localhost:" + PORT + "/api/tasks/1", taskDeserializer);
         
@@ -308,7 +317,7 @@ public class RestApiMockServerTest {
     }
     
     @Test
-    public void testCreateTask() throws IOException {
+    public void testCreateTask() throws IOException, ParseException {
         // Create a new task request
         CreateTaskRequest createRequest = new CreateTaskRequest();
         createRequest.setTitle("Write documentation");
@@ -343,7 +352,7 @@ public class RestApiMockServerTest {
     }
     
     @Test
-    public void testUpdateTask() throws IOException {
+    public void testUpdateTask() throws IOException, ParseException {
         // Create an update task request
         UpdateTaskRequest updateRequest = new UpdateTaskRequest();
         updateRequest.setTitle("Implement serializer library"); // Changed title
