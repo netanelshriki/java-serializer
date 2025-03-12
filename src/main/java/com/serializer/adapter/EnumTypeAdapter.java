@@ -40,9 +40,27 @@ public class EnumTypeAdapter<E extends Enum<E>> implements TypeAdapter<E, String
         if (value == null || value.isEmpty()) {
             return null;
         }
+        
         try {
             return Enum.valueOf(enumType, value);
         } catch (IllegalArgumentException e) {
+            // Try to handle if the value is quoted
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+                String unquoted = value.substring(1, value.length() - 1);
+                try {
+                    return Enum.valueOf(enumType, unquoted);
+                } catch (IllegalArgumentException ex) {
+                    // Ignore and continue to the next case
+                }
+            }
+            
+            // Try case-insensitive match
+            for (E enumConstant : enumType.getEnumConstants()) {
+                if (enumConstant.name().equalsIgnoreCase(value)) {
+                    return enumConstant;
+                }
+            }
+            
             throw new DeserializationException("Invalid enum value: " + value + " for enum " + enumType.getName(), e);
         }
     }
