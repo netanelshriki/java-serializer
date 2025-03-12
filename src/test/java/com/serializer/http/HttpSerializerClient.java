@@ -10,6 +10,7 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
@@ -45,8 +46,9 @@ public class HttpSerializerClient {
      * @param deserializer The deserializer to use for the response
      * @return The deserialized response object
      * @throws IOException if an I/O error occurs
+     * @throws ParseException if parsing the response fails
      */
-    public <T> T get(String url, Deserializer<T> deserializer) throws IOException {
+    public <T> T get(String url, Deserializer<T> deserializer) throws IOException, ParseException {
         HttpGet request = new HttpGet(url);
         request.setHeader("Accept", "application/json");
         
@@ -72,8 +74,9 @@ public class HttpSerializerClient {
      * @param deserializer The deserializer to use for the response
      * @return The deserialized response object
      * @throws IOException if an I/O error occurs
+     * @throws ParseException if parsing the response fails
      */
-    public <T, R> R post(String url, T requestObject, Serializer<T> serializer, Deserializer<R> deserializer) throws IOException {
+    public <T, R> R post(String url, T requestObject, Serializer<T> serializer, Deserializer<R> deserializer) throws IOException, ParseException {
         HttpPost request = new HttpPost(url);
         request.setHeader("Content-Type", "application/json");
         request.setHeader("Accept", "application/json");
