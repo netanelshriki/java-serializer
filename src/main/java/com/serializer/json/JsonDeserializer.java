@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
@@ -461,9 +462,48 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         }
         
         String dateStr = value.toString();
+        
+        // First try with the configured date format
         try {
             return new SimpleDateFormat(context.getDateFormat()).parse(dateStr);
         } catch (ParseException e) {
+            // If that fails, try some common formats:
+            
+            // Try year only format (e.g., "2025")
+            if (dateStr.matches("\\d{4}")) {
+                try {
+                    int year = Integer.parseInt(dateStr);
+                    Calendar calendar = Calendar.getInstance();
+                    calendar.clear();
+                    calendar.set(Calendar.YEAR, year);
+                    return calendar.getTime();
+                } catch (NumberFormatException ex) {
+                    // Continue with other formats
+                }
+            }
+            
+            // Try common date formats
+            String[] commonFormats = {
+                "yyyy-MM-dd", 
+                "yyyy/MM/dd",
+                "MM/dd/yyyy",
+                "dd-MM-yyyy",
+                "dd/MM/yyyy",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd'T'HH:mm:ss.SSS",
+                "EEE, dd MMM yyyy HH:mm:ss zzz" // RFC 822
+            };
+            
+            for (String format : commonFormats) {
+                try {
+                    SimpleDateFormat sdf = new SimpleDateFormat(format);
+                    return sdf.parse(dateStr);
+                } catch (ParseException ex) {
+                    // Try next format
+                }
+            }
+            
+            // If all parsing attempts fail, throw an exception
             throw new DeserializationException("Cannot parse date: " + dateStr, e);
         }
     }
