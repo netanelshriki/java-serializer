@@ -232,6 +232,53 @@ Person person = Serializers.fromJson(inputStream, Person.class);
 inputStream.close();
 ```
 
+## HTTP Integration
+
+The library can be easily integrated with HTTP clients for API communication. Here's an example using the Apache HttpClient:
+
+```java
+// Create a serializer and deserializer
+Serializer<User> serializer = Serializers.jsonSerializer(User.class);
+Deserializer<User> deserializer = Serializers.jsonDeserializer(User.class);
+
+// Create an HTTP client
+HttpSerializerClient httpClient = new HttpSerializerClient();
+
+// Send a POST request with serialized object
+User user = new User("john.doe", "password123");
+User createdUser = httpClient.post("https://api.example.com/users", user, serializer, deserializer);
+
+// Send a GET request and deserialize the response
+User fetchedUser = httpClient.get("https://api.example.com/users/123", deserializer);
+```
+
+See the `src/test/java/com/serializer/test/MockServerTest.java` for complete examples of HTTP integration with MockServer.
+
+## Custom Type Adapters with HTTP
+
+You can use custom type adapters with HTTP communication for handling complex types:
+
+```java
+// Create a serializer factory with custom type adapters
+JsonSerializerFactory factory = JsonSerializerFactory.builder()
+        .registerTypeAdapter(Money.class, new MoneyTypeAdapter())
+        .registerTypeAdapter(Currency.class, new CurrencyTypeAdapter())
+        .build();
+
+// Create serializers and deserializers
+Serializer<Product> serializer = factory.getSerializer(Product.class);
+Deserializer<Product> deserializer = factory.getDeserializer(Product.class);
+
+// Use with HTTP client
+Product product = httpClient.get("https://api.example.com/products/123", deserializer);
+```
+
+See `src/test/java/com/serializer/test/CustomAdapterMockServerTest.java` for a complete example of custom type adapters with HTTP.
+
+## RESTful API Example
+
+The library can be used to build complete RESTful APIs. See `src/test/java/com/serializer/test/RestApiMockServerTest.java` for an example that implements a full CRUD API with proper error handling.
+
 ## Design Patterns
 
 This library implements several design patterns:
