@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.UUID;
 
+import org.apache.hc.core5.http.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ public class MockServerTest {
     }
     
     @Test
-    public void testGetRequest() throws IOException {
+    public void testGetRequest() throws IOException, ParseException {
         // Set up test data
         User user = new User();
         user.setId(UUID.randomUUID());
@@ -93,7 +94,7 @@ public class MockServerTest {
     }
     
     @Test
-    public void testPostRequest() throws IOException {
+    public void testPostRequest() throws IOException, ParseException {
         // Set up test data for request and response
         CreateUserRequest createRequest = new CreateUserRequest();
         createRequest.setUsername("newuser");
@@ -146,7 +147,7 @@ public class MockServerTest {
     }
     
     @Test
-    public void testGetListOfObjects() throws IOException {
+    public void testGetListOfObjects() throws IOException, ParseException {
         // Set up test data - a list of users
         User user1 = new User();
         user1.setId(UUID.randomUUID());
