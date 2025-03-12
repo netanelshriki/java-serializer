@@ -19,7 +19,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import com.serializer.annotation.Expose;
 import com.serializer.annotation.JsonIgnore;
@@ -221,11 +220,6 @@ public class JsonDeserializer<T> implements Deserializer<T> {
             return null;
         }
         
-        // Special handling for UUID
-        if (type == UUID.class && value instanceof String) {
-            return (R) UUID.fromString((String) value);
-        }
-        
         // Check for a type adapter first
         TypeAdapter<T, Object> typeAdapter = (TypeAdapter<T, Object>) context.getAdapter(type);
         if (typeAdapter != null) {
@@ -245,133 +239,155 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         } else if (type.isEnum()) {
             return (R) convertEnum(value, (Class<Enum>) type);
         } else if (type.isArray()) {
-            if (value instanceof List) {
-                return (R) convertArray(value, type.getComponentType());
-            } else {
-                // If we received a single value but need an array, create a single-element array
-                Object array = Array.newInstance(type.getComponentType(), 1);
-                Array.set(array, 0, convertValue(value, type.getComponentType(), null));
-                return (R) array;
-            }
+            return (R) convertArray(value, type.getComponentType());
         } else if (Collection.class.isAssignableFrom(type)) {
-            if (value instanceof List) {
-                return (R) convertCollection(value, type);
-            } else {
-                // If we received a single value but need a collection, create a single-element collection
-                Collection collection = createCollection(type);
-                collection.add(value);
-                return (R) collection;
-            }
+            return (R) convertCollection(value, type);
         } else if (Map.class.isAssignableFrom(type)) {
-            if (value instanceof Map) {
-                return (R) convertMap(value, type);
-            } else {
-                throw new DeserializationException("Expected object for Map type, got " + value.getClass().getName());
-            }
+            return (R) convertMap(value, type);
         } else {
             // Complex object - deserialize its fields
             if (value instanceof Map) {
                 return (R) convertObject(value, type);
             } else if (value instanceof Number || value instanceof Boolean || value instanceof String) {
-                // Handle case where a primitive value is received but a complex object is expected
-                // Try to find a single-argument constructor or static factory method
-                try {
-                    return (R) createObjectFromPrimitive(value, type);
-                } catch (Exception e) {
-                    throw new DeserializationException("Expected object, got " + value.getClass().getName(), e);
-                }
+                // Try to create an object from a primitive or simple type
+                return (R) createObjectFromPrimitive(value, type);
             } else {
                 throw new DeserializationException("Expected object, got " + value.getClass().getName());
             }
         }
     }
-
-    /**
-     * Creates a collection instance of the specified type.
-     *
-     * @param collectionType The collection class
-     * @return A new collection instance
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Collection createCollection(Class<?> collectionType) {
-        if (collectionType.isInterface()) {
-            if (List.class.isAssignableFrom(collectionType)) {
-                return new ArrayList();
-            } else if (java.util.Set.class.isAssignableFrom(collectionType)) {
-                return new java.util.LinkedHashSet();
-            } else {
-                return new ArrayList();
-            }
-        } else {
-            try {
-                return (Collection) collectionType.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                return new ArrayList();
-            }
-        }
-    }
     
     /**
-     * Attempts to create an object from a primitive value using constructors or factory methods.
+     * Attempts to create an object from a primitive value.
+     * This is useful for cases where a simple value like a number or string needs to be
+     * converted to a complex object.
      *
      * @param <R> The target type
      * @param value The primitive value
      * @param targetType The target class
      * @return An instance of the target type
-     * @throws Exception if creation fails
+     * @throws Exception if conversion fails
      */
-    @SuppressWarnings({"unchecked"})
-    private <R> R createObjectFromPrimitive(Object value, Class<?> targetType) throws Exception {
-        // Try to use a constructor that takes the value's type
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private <R> R createObjectFromPrimitive(Object value, Class<R> targetType) throws Exception {
+        // Try to create a new instance
+        R instance;
         try {
-            if (value instanceof String) {
-                return (R) targetType.getDeclaredConstructor(String.class).newInstance(value);
-            } else if (value instanceof Number) {
-                // Try different numeric constructors
-                if (value instanceof Integer) {
-                    return (R) targetType.getDeclaredConstructor(int.class).newInstance(((Number) value).intValue());
-                } else if (value instanceof Long) {
-                    return (R) targetType.getDeclaredConstructor(long.class).newInstance(((Number) value).longValue());
-                } else if (value instanceof Double) {
-                    return (R) targetType.getDeclaredConstructor(double.class).newInstance(((Number) value).doubleValue());
+            instance = targetType.getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            throw new DeserializationException("Cannot create instance of " + targetType.getName(), e);
+        }
+        
+        // For numbers and simple values, try to set an 'id' or 'value' field if available
+        if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+            try {
+                // Try to find an 'id' field
+                Field idField = null;
+                try {
+                    idField = targetType.getDeclaredField("id");
+                } catch (NoSuchFieldException e) {
+                    // No id field, try 'value'
+                    try {
+                        idField = targetType.getDeclaredField("value");
+                    } catch (NoSuchFieldException ex) {
+                        // Neither 'id' nor 'value' field
+                        throw new DeserializationException("Cannot create object of type " + 
+                                targetType.getName() + " from primitive value. No 'id' or 'value' field found.");
+                    }
                 }
-            } else if (value instanceof Boolean) {
-                return (R) targetType.getDeclaredConstructor(boolean.class).newInstance(value);
-            }
-        } catch (NoSuchMethodException ignored) {
-            // Fall through to try other approaches
-        }
-        
-        // Try static factory methods like valueOf or fromString
-        try {
-            if (value instanceof String) {
-                return (R) targetType.getMethod("valueOf", String.class).invoke(null, value);
-            } else if (value instanceof Number) {
-                // Try different valueOf methods
-                if (value instanceof Integer) {
-                    return (R) targetType.getMethod("valueOf", int.class).invoke(null, ((Number) value).intValue());
-                } else if (value instanceof Long) {
-                    return (R) targetType.getMethod("valueOf", long.class).invoke(null, ((Number) value).longValue());
-                } else if (value instanceof Double) {
-                    return (R) targetType.getMethod("valueOf", double.class).invoke(null, ((Number) value).doubleValue());
+                
+                // Set the field value - this is where we need to add proper type conversion
+                if (idField != null) {
+                    // Convert the value to the appropriate type of the target field
+                    Object convertedValue = convertValueToFieldType(value, idField.getType());
+                    ReflectionUtils.setFieldValue(instance, idField, convertedValue);
                 }
-            }
-        } catch (NoSuchMethodException ignored) {
-            // Fall through to default behavior
-        }
-        
-        // If all else fails, create an empty object and try to set a field with the value's name
-        Object obj = targetType.getDeclaredConstructor().newInstance();
-        for (Field field : ReflectionUtils.getAllFields(targetType)) {
-            if (field.getName().equalsIgnoreCase("value") || 
-                field.getName().equalsIgnoreCase("id") || 
-                field.getName().equalsIgnoreCase("name")) {
-                ReflectionUtils.setFieldValue(obj, field, value);
-                return (R) obj;
+            } catch (DeserializationException e) {
+                throw e; // Rethrow specific deserialization exceptions
+            } catch (Exception e) {
+                throw new DeserializationException("Failed to set primitive value to object", e);
             }
         }
         
-        return (R) obj;
+        return instance;
+    }
+    
+    /**
+     * Converts a value to the correct type for a field.
+     * 
+     * @param value The value to convert
+     * @param fieldType The target field type
+     * @return The converted value
+     */
+    private Object convertValueToFieldType(Object value, Class<?> fieldType) {
+        if (value == null) {
+            return null;
+        }
+        
+        // No conversion needed if types match
+        if (fieldType.isAssignableFrom(value.getClass())) {
+            return value;
+        }
+        
+        // Handle numeric conversions
+        if (value instanceof Number) {
+            Number num = (Number) value;
+            
+            if (fieldType == Integer.class || fieldType == int.class) {
+                return num.intValue();
+            } else if (fieldType == Long.class || fieldType == long.class) {
+                return num.longValue();
+            } else if (fieldType == Double.class || fieldType == double.class) {
+                return num.doubleValue();
+            } else if (fieldType == Float.class || fieldType == float.class) {
+                return num.floatValue();
+            } else if (fieldType == Short.class || fieldType == short.class) {
+                return num.shortValue();
+            } else if (fieldType == Byte.class || fieldType == byte.class) {
+                return num.byteValue();
+            }
+        }
+        
+        // String conversions
+        if (value instanceof String) {
+            String str = (String) value;
+            
+            if (fieldType == Character.class || fieldType == char.class) {
+                return str.isEmpty() ? null : str.charAt(0);
+            }
+            
+            // Try to parse numeric types from string
+            try {
+                if (fieldType == Integer.class || fieldType == int.class) {
+                    return Integer.parseInt(str);
+                } else if (fieldType == Long.class || fieldType == long.class) {
+                    return Long.parseLong(str);
+                } else if (fieldType == Double.class || fieldType == double.class) {
+                    return Double.parseDouble(str);
+                } else if (fieldType == Float.class || fieldType == float.class) {
+                    return Float.parseFloat(str);
+                } else if (fieldType == Boolean.class || fieldType == boolean.class) {
+                    return Boolean.parseBoolean(str);
+                }
+            } catch (NumberFormatException e) {
+                throw new DeserializationException("Cannot convert string '" + str + "' to " + fieldType.getName(), e);
+            }
+        }
+        
+        // Boolean conversions
+        if (value instanceof Boolean) {
+            Boolean bool = (Boolean) value;
+            
+            if (fieldType == String.class) {
+                return bool.toString();
+            } else if (fieldType == Integer.class || fieldType == int.class) {
+                return bool ? 1 : 0;
+            }
+        }
+        
+        // If we get here, we couldn't convert the value
+        throw new DeserializationException("Cannot convert " + value.getClass().getName() + 
+                " to " + fieldType.getName());
     }
     
     /**
@@ -523,7 +539,24 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         }
         
         List<?> list = (List<?>) value;
-        Collection collection = createCollection(collectionType);
+        Collection collection;
+        
+        // Create a new instance of the collection type
+        if (collectionType.isInterface()) {
+            if (List.class.isAssignableFrom(collectionType)) {
+                collection = new ArrayList();
+            } else if (java.util.Set.class.isAssignableFrom(collectionType)) {
+                collection = new java.util.LinkedHashSet();
+            } else {
+                throw new DeserializationException("Unsupported collection type: " + collectionType.getName());
+            }
+        } else {
+            try {
+                collection = (Collection) collectionType.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new DeserializationException("Cannot create instance of " + collectionType.getName(), e);
+            }
+        }
         
         // Determine the element type
         Class<?> elementType = Object.class;
@@ -724,32 +757,29 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         // Use generic conversion
         if (targetType.isAssignableFrom(value.getClass())) {
             return (V) value;
-        } else {
-            // For classes with the same wrapper type (e.g., Integer, Long, Double),
-            // convert between them if possible
-            if (Number.class.isAssignableFrom(targetType) && value instanceof Number) {
-                return convertPrimitive(value, targetType);
-            }
-            
-            // For special JDK classes with type issues
-            if (targetType == UUID.class && value instanceof String) {
-                return (V) UUID.fromString((String) value);
-            }
-            
-            // Delegate to convertToTargetType with an appropriate class
-            // This is a hack to handle the internal recursion and type conversion
-            try {
-                Class<?> effectiveType = targetType;
-                return (V) convertToTargetType(value);
-            } catch (Exception e) {
-                // If we fail, try to create an object from primitive as last resort
-                if ((value instanceof Number || value instanceof String || value instanceof Boolean) 
-                        && !targetType.isPrimitive() && !Number.class.isAssignableFrom(targetType) 
-                        && targetType != String.class && targetType != Boolean.class) {
-                    return (V) createObjectFromPrimitive(value, targetType);
+        } else if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+            // Handle basic type conversion for primitives and basic types
+            if (targetType.isPrimitive() || Number.class.isAssignableFrom(targetType) || 
+                    targetType == String.class || targetType == Boolean.class || targetType == Character.class) {
+                try {
+                    // Use convertValueToFieldType for proper type conversion
+                    return (V) convertValueToFieldType(value, targetType);
+                } catch (Exception e) {
+                    // Fall back to normal conversion if specialized conversion fails
                 }
-                throw e;
             }
+        }
+        
+        // Delegate to convertToTargetType for more complex conversions
+        JsonDeserializer<V> deserializer = new JsonDeserializer<>(targetType, context);
+        if (value instanceof String) {
+            // If value is already a string, try to parse it as JSON
+            return deserializer.deserialize((String) value);
+        } else {
+            // Otherwise, serialize the value to JSON first
+            JsonSerializer<Object> serializer = new JsonSerializer<>(Object.class, context);
+            String json = serializer.serialize(value);
+            return deserializer.deserialize(json);
         }
     }
     
