@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.serializer.annotation.Expose;
 import com.serializer.annotation.JsonIgnore;
@@ -220,6 +221,11 @@ public class JsonDeserializer<T> implements Deserializer<T> {
             return null;
         }
         
+        // Special handling for UUID
+        if (type == UUID.class && value instanceof String) {
+            return (R) UUID.fromString((String) value);
+        }
+        
         // Check for a type adapter first
         TypeAdapter<T, Object> typeAdapter = (TypeAdapter<T, Object>) context.getAdapter(type);
         if (typeAdapter != null) {
@@ -239,15 +245,133 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         } else if (type.isEnum()) {
             return (R) convertEnum(value, (Class<Enum>) type);
         } else if (type.isArray()) {
-            return (R) convertArray(value, type.getComponentType());
+            if (value instanceof List) {
+                return (R) convertArray(value, type.getComponentType());
+            } else {
+                // If we received a single value but need an array, create a single-element array
+                Object array = Array.newInstance(type.getComponentType(), 1);
+                Array.set(array, 0, convertValue(value, type.getComponentType(), null));
+                return (R) array;
+            }
         } else if (Collection.class.isAssignableFrom(type)) {
-            return (R) convertCollection(value, type);
+            if (value instanceof List) {
+                return (R) convertCollection(value, type);
+            } else {
+                // If we received a single value but need a collection, create a single-element collection
+                Collection collection = createCollection(type);
+                collection.add(value);
+                return (R) collection;
+            }
         } else if (Map.class.isAssignableFrom(type)) {
-            return (R) convertMap(value, type);
+            if (value instanceof Map) {
+                return (R) convertMap(value, type);
+            } else {
+                throw new DeserializationException("Expected object for Map type, got " + value.getClass().getName());
+            }
         } else {
             // Complex object - deserialize its fields
-            return (R) convertObject(value, type);
+            if (value instanceof Map) {
+                return (R) convertObject(value, type);
+            } else if (value instanceof Number || value instanceof Boolean || value instanceof String) {
+                // Handle case where a primitive value is received but a complex object is expected
+                // Try to find a single-argument constructor or static factory method
+                try {
+                    return (R) createObjectFromPrimitive(value, type);
+                } catch (Exception e) {
+                    throw new DeserializationException("Expected object, got " + value.getClass().getName(), e);
+                }
+            } else {
+                throw new DeserializationException("Expected object, got " + value.getClass().getName());
+            }
         }
+    }
+
+    /**
+     * Creates a collection instance of the specified type.
+     *
+     * @param collectionType The collection class
+     * @return A new collection instance
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Collection createCollection(Class<?> collectionType) {
+        if (collectionType.isInterface()) {
+            if (List.class.isAssignableFrom(collectionType)) {
+                return new ArrayList();
+            } else if (java.util.Set.class.isAssignableFrom(collectionType)) {
+                return new java.util.LinkedHashSet();
+            } else {
+                return new ArrayList();
+            }
+        } else {
+            try {
+                return (Collection) collectionType.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                return new ArrayList();
+            }
+        }
+    }
+    
+    /**
+     * Attempts to create an object from a primitive value using constructors or factory methods.
+     *
+     * @param <R> The target type
+     * @param value The primitive value
+     * @param targetType The target class
+     * @return An instance of the target type
+     * @throws Exception if creation fails
+     */
+    @SuppressWarnings({"unchecked"})
+    private <R> R createObjectFromPrimitive(Object value, Class<?> targetType) throws Exception {
+        // Try to use a constructor that takes the value's type
+        try {
+            if (value instanceof String) {
+                return (R) targetType.getDeclaredConstructor(String.class).newInstance(value);
+            } else if (value instanceof Number) {
+                // Try different numeric constructors
+                if (value instanceof Integer) {
+                    return (R) targetType.getDeclaredConstructor(int.class).newInstance(((Number) value).intValue());
+                } else if (value instanceof Long) {
+                    return (R) targetType.getDeclaredConstructor(long.class).newInstance(((Number) value).longValue());
+                } else if (value instanceof Double) {
+                    return (R) targetType.getDeclaredConstructor(double.class).newInstance(((Number) value).doubleValue());
+                }
+            } else if (value instanceof Boolean) {
+                return (R) targetType.getDeclaredConstructor(boolean.class).newInstance(value);
+            }
+        } catch (NoSuchMethodException ignored) {
+            // Fall through to try other approaches
+        }
+        
+        // Try static factory methods like valueOf or fromString
+        try {
+            if (value instanceof String) {
+                return (R) targetType.getMethod("valueOf", String.class).invoke(null, value);
+            } else if (value instanceof Number) {
+                // Try different valueOf methods
+                if (value instanceof Integer) {
+                    return (R) targetType.getMethod("valueOf", int.class).invoke(null, ((Number) value).intValue());
+                } else if (value instanceof Long) {
+                    return (R) targetType.getMethod("valueOf", long.class).invoke(null, ((Number) value).longValue());
+                } else if (value instanceof Double) {
+                    return (R) targetType.getMethod("valueOf", double.class).invoke(null, ((Number) value).doubleValue());
+                }
+            }
+        } catch (NoSuchMethodException ignored) {
+            // Fall through to default behavior
+        }
+        
+        // If all else fails, create an empty object and try to set a field with the value's name
+        Object obj = targetType.getDeclaredConstructor().newInstance();
+        for (Field field : ReflectionUtils.getAllFields(targetType)) {
+            if (field.getName().equalsIgnoreCase("value") || 
+                field.getName().equalsIgnoreCase("id") || 
+                field.getName().equalsIgnoreCase("name")) {
+                ReflectionUtils.setFieldValue(obj, field, value);
+                return (R) obj;
+            }
+        }
+        
+        return (R) obj;
     }
     
     /**
@@ -399,24 +523,7 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         }
         
         List<?> list = (List<?>) value;
-        Collection collection;
-        
-        // Create a new instance of the collection type
-        if (collectionType.isInterface()) {
-            if (List.class.isAssignableFrom(collectionType)) {
-                collection = new ArrayList();
-            } else if (java.util.Set.class.isAssignableFrom(collectionType)) {
-                collection = new java.util.LinkedHashSet();
-            } else {
-                throw new DeserializationException("Unsupported collection type: " + collectionType.getName());
-            }
-        } else {
-            try {
-                collection = (Collection) collectionType.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new DeserializationException("Cannot create instance of " + collectionType.getName(), e);
-            }
-        }
+        Collection collection = createCollection(collectionType);
         
         // Determine the element type
         Class<?> elementType = Object.class;
@@ -618,8 +725,31 @@ public class JsonDeserializer<T> implements Deserializer<T> {
         if (targetType.isAssignableFrom(value.getClass())) {
             return (V) value;
         } else {
-            // Delegate to convertToTargetType
-            return (V) convertToTargetType(value);
+            // For classes with the same wrapper type (e.g., Integer, Long, Double),
+            // convert between them if possible
+            if (Number.class.isAssignableFrom(targetType) && value instanceof Number) {
+                return convertPrimitive(value, targetType);
+            }
+            
+            // For special JDK classes with type issues
+            if (targetType == UUID.class && value instanceof String) {
+                return (V) UUID.fromString((String) value);
+            }
+            
+            // Delegate to convertToTargetType with an appropriate class
+            // This is a hack to handle the internal recursion and type conversion
+            try {
+                Class<?> effectiveType = targetType;
+                return (V) convertToTargetType(value);
+            } catch (Exception e) {
+                // If we fail, try to create an object from primitive as last resort
+                if ((value instanceof Number || value instanceof String || value instanceof Boolean) 
+                        && !targetType.isPrimitive() && !Number.class.isAssignableFrom(targetType) 
+                        && targetType != String.class && targetType != Boolean.class) {
+                    return (V) createObjectFromPrimitive(value, targetType);
+                }
+                throw e;
+            }
         }
     }
     
