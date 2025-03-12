@@ -9,6 +9,7 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 import com.serializer.annotation.Expose;
@@ -234,7 +235,7 @@ public class JsonSerializer<T> implements Serializer<T> {
         jsonWriter.beginObject();
         
         Class<?> objectType = object.getClass();
-        List<Field> fields = ReflectionUtils.getAllFields(objectType);
+        java.util.List<Field> fields = ReflectionUtils.getAllFields(objectType);
         
         boolean first = true;
         for (Field field : fields) {
@@ -277,7 +278,9 @@ public class JsonSerializer<T> implements Serializer<T> {
             // Check for field-specific type adapter
             TypeAdapter<?, ?> fieldAdapter = context.getAdapter(field.getType());
             if (fieldAdapter != null && value != null) {
-                Object adapted = fieldAdapter.serialize(value);
+                // Fix: Use proper type casting with suppressed warnings
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                Object adapted = ((TypeAdapter) fieldAdapter).serialize(value);
                 serializeToWriter(adapted, jsonWriter.getWriter(), jsonWriter);
             } else {
                 serializeToWriter(value, jsonWriter.getWriter(), jsonWriter);
