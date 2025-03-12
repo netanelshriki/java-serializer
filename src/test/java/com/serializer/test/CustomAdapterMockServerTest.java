@@ -10,6 +10,7 @@ import java.util.Currency;
 import java.util.Date;
 import java.util.UUID;
 
+import org.apache.hc.core5.http.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,7 +56,7 @@ public class CustomAdapterMockServerTest {
     }
     
     @Test
-    public void testProductApiWithCustomAdapters() throws IOException {
+    public void testProductApiWithCustomAdapters() throws IOException, ParseException {
         // Create a product with custom types
         Product product = new Product();
         product.setId(UUID.randomUUID());
