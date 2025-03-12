@@ -186,7 +186,12 @@ public class DefaultSerializationContext implements SerializationContext {
             
             // Register type adapters
             for (Map.Entry<Class<?>, TypeAdapter<?, ?>> entry : typeAdapters.entrySet()) {
-                context.registerAdapter(entry.getKey(), entry.getValue());
+                // Fix: Use raw types with suppressed warnings to avoid type inference issues
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                Class rawType = entry.getKey();
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                TypeAdapter rawAdapter = entry.getValue();
+                context.registerAdapter(rawType, rawAdapter);
             }
             
             return context;
