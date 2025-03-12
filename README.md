@@ -281,14 +281,230 @@ The library can be used to build complete RESTful APIs. See `src/test/java/com/s
 
 ## Design Patterns
 
-This library implements several design patterns:
+This library implements several design patterns with concrete examples from the source code:
 
-- **Builder Pattern**: For creating serializers and deserializers with fluent configuration
-- **Factory Pattern**: For creating serializer and deserializer instances
-- **Adapter Pattern**: For adapting types during serialization and deserialization
-- **Strategy Pattern**: For different serialization strategies
-- **Facade Pattern**: Provides a simplified interface to the library
-- **Decorator Pattern**: For adding functionality to serializers and deserializers
+### Builder Pattern
+
+The Builder Pattern is used extensively to provide a fluent API for configuration. For example, in `JsonSerializerFactory.Builder`:
+
+```java
+// From JsonSerializerFactory.java
+public static class Builder {
+    private final com.serializer.impl.DefaultConfig config;
+    
+    private Builder() {
+        this.config = new com.serializer.impl.DefaultConfig(new DefaultSerializerFactory());
+    }
+    
+    public Builder serializeNulls(boolean serializeNulls) {
+        config.serializeNulls(serializeNulls);
+        return this;
+    }
+    
+    public Builder useFieldNames(boolean useFieldNames) {
+        config.useFieldNames(useFieldNames);
+        return this;
+    }
+    
+    public Builder dateFormat(String dateFormat) {
+        config.dateFormat(dateFormat);
+        return this;
+    }
+    
+    // More builder methods...
+    
+    public JsonSerializerFactory build() {
+        SerializationContext context = config.createContext();
+        JsonSerializerFactory factory = new JsonSerializerFactory(context);
+        return factory;
+    }
+}
+```
+
+### Factory Pattern
+
+The Factory Pattern is used to create serializer and deserializer instances. For example, in `DefaultSerializerFactory`:
+
+```java
+// From DefaultSerializerFactory.java
+@Override
+@SuppressWarnings("unchecked")
+public <T> Serializer<T> getSerializer(Class<T> type) {
+    Serializer<T> serializer = (Serializer<T>) serializers.get(type);
+    if (serializer == null) {
+        serializer = createSerializer(type);
+        serializers.put(type, serializer);
+    }
+    return serializer;
+}
+
+@Override
+@SuppressWarnings("unchecked")
+public <T> Deserializer<T> getDeserializer(Class<T> type) {
+    Deserializer<T> deserializer = (Deserializer<T>) deserializers.get(type);
+    if (deserializer == null) {
+        deserializer = createDeserializer(type);
+        deserializers.put(type, deserializer);
+    }
+    return deserializer;
+}
+```
+
+### Adapter Pattern
+
+The Adapter Pattern is used for type conversion. For example, in `DateTypeAdapter`:
+
+```java
+// From DateTypeAdapter.java
+public class DateTypeAdapter implements TypeAdapter<Date, String> {
+    private final SimpleDateFormat dateFormat;
+    
+    public DateTypeAdapter(String dateFormatPattern) {
+        this.dateFormat = new SimpleDateFormat(dateFormatPattern);
+    }
+    
+    @Override
+    public String serialize(Date value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            synchronized (dateFormat) {
+                return dateFormat.format(value);
+            }
+        } catch (Exception e) {
+            throw new SerializationException("Failed to format date: " + value, e);
+        }
+    }
+    
+    @Override
+    public Date deserialize(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            synchronized (dateFormat) {
+                return dateFormat.parse(value);
+            }
+        } catch (ParseException e) {
+            throw new DeserializationException("Failed to parse date: " + value, e);
+        }
+    }
+}
+```
+
+### Strategy Pattern
+
+The Strategy Pattern is used to implement different serialization strategies. For example, through the `SerializeStrategy` annotation:
+
+```java
+// From SerializeStrategy.java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+public @interface SerializeStrategy {
+    
+    /**
+     * The serialization strategy class to use for the annotated type.
+     */
+    Class<?> value();
+}
+
+// Implementation in JsonSerializer for different serialization strategies
+private void serializeObject(Object object, JsonWriter jsonWriter) throws Exception {
+    // Apply different strategies based on object type
+    if (object instanceof Map) {
+        serializeMap((Map<?, ?>) object, jsonWriter);
+    } else if (object instanceof Collection) {
+        serializeCollection((Collection<?>) object, jsonWriter);
+    } else if (objectType.isArray()) {
+        serializeArray(object, jsonWriter);
+    } else {
+        // Complex object strategy
+        // ...
+    }
+}
+```
+
+### Facade Pattern
+
+The Facade Pattern provides a simplified interface through the `Serializers` class:
+
+```java
+// From Serializers.java
+public final class Serializers {
+    
+    private Serializers() {
+        // Private constructor to prevent instantiation
+    }
+    
+    public static <T> Serializer<T> jsonSerializer(Class<T> type) {
+        return createDefaultJsonFactory().getSerializer(type);
+    }
+    
+    public static <T> Deserializer<T> jsonDeserializer(Class<T> type) {
+        return createDefaultJsonFactory().getDeserializer(type);
+    }
+    
+    public static <T> String toJson(T object) {
+        if (object == null) {
+            return "null";
+        }
+        @SuppressWarnings("unchecked")
+        Class<T> type = (Class<T>) object.getClass();
+        return jsonSerializer(type).serialize(object);
+    }
+    
+    public static <T> T fromJson(String json, Class<T> type) {
+        return jsonDeserializer(type).deserialize(json);
+    }
+    
+    // More utility methods...
+}
+```
+
+### Decorator Pattern
+
+The Decorator Pattern is used to add features to serializers. For example, in `JsonWriter`:
+
+```java
+// From JsonSerializer.java - JsonWriter inner class
+private static class JsonWriter {
+    private final Writer writer;
+    private final StringBuilder stringBuilder;
+    private final String indentation;
+    private int indentLevel = 0;
+    
+    // Constructors...
+    
+    public void writeString(String string) throws IOException {
+        write('"');
+        write(StringUtils.escapeJson(string));
+        write('"');
+    }
+    
+    public void beginObject() throws IOException {
+        write('{');
+        indentLevel++;
+        writeNewLineAndIndent();
+    }
+    
+    public void endObject() throws IOException {
+        indentLevel--;
+        writeNewLineAndIndent();
+        write('}');
+    }
+    
+    // The decorator adds pretty printing functionality
+    private void writeNewLineAndIndent() throws IOException {
+        if (isPrettyPrinting()) {
+            write('\n');
+            for (int i = 0; i < indentLevel; i++) {
+                write(indentation);
+            }
+        }
+    }
+}
+```
 
 ## License
 
