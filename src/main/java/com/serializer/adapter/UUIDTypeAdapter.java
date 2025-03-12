@@ -30,10 +30,39 @@ public class UUIDTypeAdapter implements TypeAdapter<UUID, String> {
         if (value == null || value.isEmpty()) {
             return null;
         }
+        
+        // Handle quoted string format if present
+        String uuidString = value;
+        if (uuidString.startsWith("\"") && uuidString.endsWith("\"")) {
+            uuidString = uuidString.substring(1, uuidString.length() - 1);
+        }
+        
         try {
-            return UUID.fromString(value);
+            return UUID.fromString(uuidString);
         } catch (IllegalArgumentException e) {
-            throw new DeserializationException("Invalid UUID: " + value, e);
+            // Try to create a UUID from a different format or attempt to repair common issues
+            try {
+                // If it's not in the standard format, try to normalize it
+                uuidString = uuidString.trim().toLowerCase()
+                        .replace(" ", "")
+                        .replace("{", "")
+                        .replace("}", "");
+                
+                // Check if we need to add hyphens for a UUID with no separators
+                if (!uuidString.contains("-") && uuidString.length() == 32) {
+                    uuidString = uuidString.substring(0, 8) + "-" + 
+                                 uuidString.substring(8, 12) + "-" + 
+                                 uuidString.substring(12, 16) + "-" + 
+                                 uuidString.substring(16, 20) + "-" + 
+                                 uuidString.substring(20);
+                    return UUID.fromString(uuidString);
+                }
+                
+                // If all attempts fail, throw the original exception
+                throw new DeserializationException("Invalid UUID: " + value, e);
+            } catch (Exception ex) {
+                throw new DeserializationException("Invalid UUID: " + value, e);
+            }
         }
     }
     
